@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -22,6 +22,14 @@ interface ClassBuilderProps {
   onCancel: () => void;
 }
 
+interface VocabularyWord {
+  id: string;
+  dutch: string;
+  english: string;
+  example?: string;
+  audioUrl?: string;
+}
+
 const PAGE_TYPE_INFO = {
   intro: { label: 'Introduction', description: 'Text-based introduction to the lesson' },
   vocabulary: { label: 'Vocabulary List', description: 'List of Dutch words with translations' },
@@ -43,6 +51,20 @@ export function ClassBuilder({ accessToken, existingClass, days, onSave, onCance
   const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [vocabulary, setVocabulary] = useState<VocabularyWord[]>([]);
+
+  useEffect(() => {
+    loadVocabulary();
+  }, []);
+
+  const loadVocabulary = async () => {
+    try {
+      const data = await api.getVocabulary(accessToken);
+      setVocabulary(data || []);
+    } catch (error) {
+      console.error('Failed to load vocabulary:', error);
+    }
+  };
 
   const addPage = (type: Page['type']) => {
     const newPage: Page = {
@@ -353,6 +375,8 @@ export function ClassBuilder({ accessToken, existingClass, days, onSave, onCance
                   <PageEditor
                     page={selectedPage}
                     onChange={(updates) => updatePage(selectedPageIndex!, updates)}
+                    vocabulary={vocabulary}
+                    accessToken={accessToken}
                   />
                 </div>
               </div>
@@ -402,21 +426,26 @@ export function ClassBuilder({ accessToken, existingClass, days, onSave, onCance
 }
 
 // Page Editor Component
-function PageEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function PageEditor({ page, onChange, vocabulary, accessToken }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+  accessToken: string;
+}) {
   const renderEditor = () => {
     switch (page.type) {
       case 'intro':
         return <IntroEditor page={page} onChange={onChange} />;
       case 'vocabulary':
-        return <VocabularyEditor page={page} onChange={onChange} />;
+        return <VocabularyEditor page={page} onChange={onChange} vocabulary={vocabulary} />;
       case 'flashcards':
-        return <FlashcardsEditor page={page} onChange={onChange} />;
+        return <FlashcardsEditor page={page} onChange={onChange} vocabulary={vocabulary} />;
       case 'multipleChoice':
-        return <MultipleChoiceEditor page={page} onChange={onChange} />;
+        return <MultipleChoiceEditor page={page} onChange={onChange} vocabulary={vocabulary} />;
       case 'fillInBlank':
-        return <FillInBlankEditor page={page} onChange={onChange} />;
+        return <FillInBlankEditor page={page} onChange={onChange} vocabulary={vocabulary} />;
       case 'matching':
-        return <MatchingEditor page={page} onChange={onChange} />;
+        return <MatchingEditor page={page} onChange={onChange} vocabulary={vocabulary} />;
       case 'wordScramble':
         return <WordScrambleEditor page={page} onChange={onChange} />;
       case 'listening':
@@ -468,7 +497,11 @@ function IntroEditor({ page, onChange }: { page: Page; onChange: (updates: Parti
   );
 }
 
-function VocabularyEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function VocabularyEditor({ page, onChange, vocabulary }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+}) {
   const words = page.content?.words || [];
 
   const updateWord = (index: number, field: string, value: string) => {
@@ -478,18 +511,42 @@ function VocabularyEditor({ page, onChange }: { page: Page; onChange: (updates: 
   };
 
   const addWord = () => {
-    onChange({ content: { words: [...words, { dutch: '', english: '', example: '' }] } });
+    onChange({ content: { words: [...words, { dutch: '', english: '', example: '', audioUrl: '' }] } });
   };
 
   const removeWord = (index: number) => {
     onChange({ content: { words: words.filter((_: any, i: number) => i !== index) } });
   };
 
+  const loadFromVocabulary = () => {
+    if (vocabulary.length === 0) {
+      alert('No vocabulary words found. Add words in the Vocabulary Manager first.');
+      return;
+    }
+    const vocabWords = vocabulary.map(v => ({
+      dutch: v.dutch,
+      english: v.english,
+      example: v.example || '',
+      audioUrl: v.audioUrl || ''
+    }));
+    onChange({ content: { words: vocabWords } });
+  };
+
   return (
     <div className="space-y-4">
-      <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
-        Vocabulary Words
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
+          Vocabulary Words
+        </Label>
+        <Button 
+          onClick={loadFromVocabulary} 
+          variant="outline" 
+          size="sm"
+          className="text-xs"
+        >
+          Load from Vocabulary
+        </Button>
+      </div>
       {words.map((word: any, index: number) => (
         <div key={index} className="p-4 bg-zinc-50 border border-zinc-200">
           <div className="flex items-start justify-between mb-3">
@@ -543,7 +600,11 @@ function VocabularyEditor({ page, onChange }: { page: Page; onChange: (updates: 
   );
 }
 
-function FlashcardsEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function FlashcardsEditor({ page, onChange, vocabulary }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+}) {
   const cards = page.content?.cards || [];
 
   const updateCard = (index: number, field: string, value: string) => {
@@ -553,18 +614,41 @@ function FlashcardsEditor({ page, onChange }: { page: Page; onChange: (updates: 
   };
 
   const addCard = () => {
-    onChange({ content: { cards: [...cards, { front: '', back: '' }] } });
+    onChange({ content: { cards: [...cards, { front: '', back: '', audioUrl: '' }] } });
   };
 
   const removeCard = (index: number) => {
     onChange({ content: { cards: cards.filter((_: any, i: number) => i !== index) } });
   };
 
+  const loadFromVocabulary = () => {
+    if (vocabulary.length === 0) {
+      alert('No vocabulary words found. Add words in the Vocabulary Manager first.');
+      return;
+    }
+    const vocabCards = vocabulary.map(v => ({
+      front: v.dutch,
+      back: v.english,
+      audioUrl: v.audioUrl || ''
+    }));
+    onChange({ content: { cards: vocabCards } });
+  };
+
   return (
     <div className="space-y-4">
-      <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
-        Flashcards
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
+          Flashcards
+        </Label>
+        <Button 
+          onClick={loadFromVocabulary} 
+          variant="outline" 
+          size="sm"
+          className="text-xs"
+        >
+          Load from Vocabulary
+        </Button>
+      </div>
       {cards.map((card: any, index: number) => (
         <div key={index} className="p-4 bg-zinc-50 border border-zinc-200">
           <div className="flex items-start justify-between mb-3">
@@ -607,7 +691,11 @@ function FlashcardsEditor({ page, onChange }: { page: Page; onChange: (updates: 
   );
 }
 
-function MultipleChoiceEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function MultipleChoiceEditor({ page, onChange, vocabulary }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+}) {
   const questions = page.content?.questions || [];
 
   const updateQuestion = (index: number, field: string, value: any) => {
@@ -625,18 +713,42 @@ function MultipleChoiceEditor({ page, onChange }: { page: Page; onChange: (updat
   };
 
   const addQuestion = () => {
-    onChange({ content: { questions: [...questions, { question: '', options: ['', '', '', ''], correctIndex: 0 }] } });
+    onChange({ content: { questions: [...questions, { question: '', options: ['', '', '', ''], correctIndex: 0, audioUrl: '' }] } });
   };
 
   const removeQuestion = (index: number) => {
     onChange({ content: { questions: questions.filter((_: any, i: number) => i !== index) } });
   };
 
+  const loadFromVocabulary = () => {
+    if (vocabulary.length === 0) {
+      alert('No vocabulary words found. Add words in the Vocabulary Manager first.');
+      return;
+    }
+    const vocabQuestions = vocabulary.map(v => ({
+      question: `What does "${v.dutch}" mean?`,
+      options: [v.english, '', '', ''],
+      correctIndex: 0,
+      audioUrl: v.audioUrl || ''
+    }));
+    onChange({ content: { questions: vocabQuestions } });
+  };
+
   return (
     <div className="space-y-4">
-      <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
-        Multiple Choice Questions
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
+          Multiple Choice Questions
+        </Label>
+        <Button 
+          onClick={loadFromVocabulary} 
+          variant="outline" 
+          size="sm"
+          className="text-xs"
+        >
+          Load from Vocabulary
+        </Button>
+      </div>
       {questions.map((q: any, qIndex: number) => (
         <div key={qIndex} className="p-4 bg-zinc-50 border border-zinc-200">
           <div className="flex items-start justify-between mb-3">
@@ -691,7 +803,11 @@ function MultipleChoiceEditor({ page, onChange }: { page: Page; onChange: (updat
   );
 }
 
-function FillInBlankEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function FillInBlankEditor({ page, onChange, vocabulary }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+}) {
   const exercises = page.content?.exercises || [];
 
   const updateExercise = (index: number, field: string, value: string) => {
@@ -701,20 +817,43 @@ function FillInBlankEditor({ page, onChange }: { page: Page; onChange: (updates:
   };
 
   const addExercise = () => {
-    onChange({ content: { exercises: [...exercises, { sentence: '', answer: '' }] } });
+    onChange({ content: { exercises: [...exercises, { sentence: '', answer: '', audioUrl: '' }] } });
   };
 
   const removeExercise = (index: number) => {
     onChange({ content: { exercises: exercises.filter((_: any, i: number) => i !== index) } });
   };
 
+  const loadFromVocabulary = () => {
+    if (vocabulary.length === 0) {
+      alert('No vocabulary words found. Add words in the Vocabulary Manager first.');
+      return;
+    }
+    const vocabExercises = vocabulary.map(v => ({
+      sentence: v.example || `I need to say ___ in Dutch.`,
+      answer: v.dutch,
+      audioUrl: v.audioUrl || ''
+    }));
+    onChange({ content: { exercises: vocabExercises } });
+  };
+
   return (
     <div className="space-y-4">
-      <div>
-        <Label className="text-xs text-zinc-600 mb-1 block" style={{ fontWeight: 500 }}>
-          Fill in the Blank Exercises
-        </Label>
-        <p className="text-xs text-zinc-400">Use ___ (three underscores) where the blank should be</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs text-zinc-600 mb-1 block" style={{ fontWeight: 500 }}>
+            Fill in the Blank Exercises
+          </Label>
+          <p className="text-xs text-zinc-400">Use ___ (three underscores) where the blank should be</p>
+        </div>
+        <Button 
+          onClick={loadFromVocabulary} 
+          variant="outline" 
+          size="sm"
+          className="text-xs"
+        >
+          Load from Vocabulary
+        </Button>
       </div>
       {exercises.map((ex: any, index: number) => (
         <div key={index} className="p-4 bg-zinc-50 border border-zinc-200">
@@ -758,7 +897,11 @@ function FillInBlankEditor({ page, onChange }: { page: Page; onChange: (updates:
   );
 }
 
-function MatchingEditor({ page, onChange }: { page: Page; onChange: (updates: Partial<Page>) => void }) {
+function MatchingEditor({ page, onChange, vocabulary }: { 
+  page: Page; 
+  onChange: (updates: Partial<Page>) => void;
+  vocabulary: VocabularyWord[];
+}) {
   const pairs = page.content?.pairs || [];
 
   const updatePair = (index: number, field: string, value: string) => {
@@ -768,18 +911,41 @@ function MatchingEditor({ page, onChange }: { page: Page; onChange: (updates: Pa
   };
 
   const addPair = () => {
-    onChange({ content: { pairs: [...pairs, { left: '', right: '' }] } });
+    onChange({ content: { pairs: [...pairs, { left: '', right: '', audioUrl: '' }] } });
   };
 
   const removePair = (index: number) => {
     onChange({ content: { pairs: pairs.filter((_: any, i: number) => i !== index) } });
   };
 
+  const loadFromVocabulary = () => {
+    if (vocabulary.length === 0) {
+      alert('No vocabulary words found. Add words in the Vocabulary Manager first.');
+      return;
+    }
+    const vocabPairs = vocabulary.map(v => ({
+      left: v.dutch,
+      right: v.english,
+      audioUrl: v.audioUrl || ''
+    }));
+    onChange({ content: { pairs: vocabPairs } });
+  };
+
   return (
     <div className="space-y-4">
-      <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
-        Matching Pairs
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-zinc-600" style={{ fontWeight: 500 }}>
+          Matching Pairs
+        </Label>
+        <Button 
+          onClick={loadFromVocabulary} 
+          variant="outline" 
+          size="sm"
+          className="text-xs"
+        >
+          Load from Vocabulary
+        </Button>
+      </div>
       {pairs.map((pair: any, index: number) => (
         <div key={index} className="p-4 bg-zinc-50 border border-zinc-200">
           <div className="flex items-start justify-between mb-3">

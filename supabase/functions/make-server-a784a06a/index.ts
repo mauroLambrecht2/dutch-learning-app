@@ -118,12 +118,26 @@ app.post("/signup", async (c) => {
       return c.json({ error: error.message }, 400);
     }
 
-    // Store user profile
+    // Store user profile with initial A1 fluency level
+    const now = new Date().toISOString();
     await kvSet(`user:${data.user.id}`, {
       id: data.user.id,
       email,
       name,
       role,
+      fluencyLevel: 'A1',
+      fluencyLevelUpdatedAt: now,
+      fluencyLevelUpdatedBy: undefined,
+    });
+
+    // Record initial fluency level in history
+    await kvSet(`fluency-history:${data.user.id}:${now}`, {
+      userId: data.user.id,
+      previousLevel: null,
+      newLevel: 'A1',
+      changedAt: now,
+      changedBy: 'system',
+      reason: 'Initial assignment',
     });
 
     return c.json({ user: data.user });
@@ -147,10 +161,146 @@ app.get("/profile", async (c) => {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    const profile = await kvGet(`user:${user.id}`);
+    let profile = await kvGet(`user:${user.id}`);
+    
+    // Migration: Add A1 fluency level to existing users without fluency data
+    if (profile && !profile.fluencyLevel) {
+      const now = new Date().toISOString();
+      profile = {
+        ...profile,
+        fluencyLevel: 'A1',
+        fluencyLevelUpdatedAt: now,
+        fluencyLevelUpdatedBy: undefined,
+      };
+      
+      // Update the profile in KV store
+      await kvSet(`user:${user.id}`, profile);
+      
+      // Record initial fluency level in history
+      await kvSet(`fluency-history:${user.id}:${now}`, {
+        userId: user.id,
+        previousLevel: null,
+        newLevel: 'A1',
+        changedAt: now,
+        changedBy: 'system',
+        reason: 'Migration - Initial assignment',
+      });
+      
+      console.log(`Migrated user ${user.id} to A1 fluency level`);
+    }
+    
     return c.json({ profile });
   } catch (error) {
     console.log(`Profile fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get all users (admin only)
+app.get("/users", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    // Get user profile to check role
+    const profile = await kvGet(`user:${user.id}`);
+    if (!profile || profile.role !== 'teacher') {
+      return c.json({ error: "Admin access required" }, 403);
+    }
+
+    // Get all user profiles from KV store
+    const allUsers = await kvGetByPrefix('user:');
+    
+    // Filter out any non-user entries and format the response
+    const users = allUsers
+      .filter((u: any) => u && u.id && u.email)
+      .map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        fluencyLevel: u.fluencyLevel || 'A1',
+        fluencyLevelUpdatedAt: u.fluencyLevelUpdatedAt,
+      }));
+
+    return c.json({ users });
+  } catch (error) {
+    console.log(`Users fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Migrate all existing users to A1 fluency level (admin only)
+app.post("/migrate-fluency-levels", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    // Check if user is admin
+    const adminProfile = await kvGet(`user:${user.id}`);
+    if (!adminProfile || adminProfile.role !== 'teacher') {
+      return c.json({ error: "Admin access required" }, 403);
+    }
+
+    // Get all user profiles
+    const allUsers = await kvGetByPrefix("user:");
+    const now = new Date().toISOString();
+    let migratedCount = 0;
+    let skippedCount = 0;
+
+    for (const userProfile of allUsers) {
+      if (!userProfile.fluencyLevel) {
+        // Add A1 fluency level
+        const updatedProfile = {
+          ...userProfile,
+          fluencyLevel: 'A1',
+          fluencyLevelUpdatedAt: now,
+          fluencyLevelUpdatedBy: undefined,
+        };
+        
+        await kvSet(`user:${userProfile.id}`, updatedProfile);
+        
+        // Record initial fluency level in history
+        await kvSet(`fluency-history:${userProfile.id}:${now}`, {
+          userId: userProfile.id,
+          previousLevel: null,
+          newLevel: 'A1',
+          changedAt: now,
+          changedBy: user.id,
+          reason: 'Bulk migration - Initial assignment',
+        });
+        
+        migratedCount++;
+        console.log(`Migrated user ${userProfile.id} to A1 fluency level`);
+      } else {
+        skippedCount++;
+      }
+    }
+
+    return c.json({ 
+      success: true, 
+      migratedCount, 
+      skippedCount,
+      message: `Migrated ${migratedCount} users, skipped ${skippedCount} users with existing fluency levels`
+    });
+  } catch (error) {
+    console.log(`Migration error: ${error}`);
     return c.json({ error: String(error) }, 500);
   }
 });
@@ -230,21 +380,30 @@ app.post("/classes", async (c) => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Auto-adopt vocabulary
+    // Auto-adopt vocabulary - check for duplicates first
     if (classData.pages) {
+      // Get all existing vocabulary
+      const allVocab = await kvGetByPrefix("vocab:");
+      
       for (const page of classData.pages) {
         if (page.type === "vocabulary" && page.content?.words) {
           for (const word of page.content.words) {
             if (word.dutch && word.english) {
-              const vocabId = `vocab:${word.dutch.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
-              const existingVocab = await kvGet(vocabId);
+              // Check if this word already exists (case-insensitive)
+              const existingWord = allVocab.find((v: any) => 
+                v.dutch.toLowerCase() === word.dutch.toLowerCase() &&
+                v.english.toLowerCase() === word.english.toLowerCase()
+              );
 
-              if (!existingVocab) {
+              if (!existingWord) {
+                // Only create if it doesn't exist
+                const vocabId = `vocab:${word.dutch.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
                 await kvSet(vocabId, {
                   id: vocabId,
                   dutch: word.dutch,
                   english: word.english,
                   example: word.example || "",
+                  audioUrl: word.audioUrl || "",
                   lessonId: classId,
                   createdBy: user.id,
                   createdAt: new Date().toISOString(),
@@ -414,6 +573,7 @@ app.post("/progress", async (c) => {
                 newVocabulary.push({
                   dutch: word.dutch,
                   english: word.english,
+                  audioUrl: word.audioUrl || '',
                   learnedAt: new Date().toISOString(),
                   classId: classId
                 });
@@ -851,6 +1011,381 @@ app.get("/test-results", async (c) => {
   }
 });
 
+// FLUENCY LEVEL ENDPOINTS
+
+// Fluency level metadata constants
+const FLUENCY_LEVELS = {
+  A1: {
+    code: 'A1',
+    name: 'Beginner',
+    description: 'Can understand and use familiar everyday expressions',
+    color: '#10b981',
+    icon: '🌱'
+  },
+  A2: {
+    code: 'A2',
+    name: 'Elementary',
+    description: 'Can communicate in simple and routine tasks',
+    color: '#3b82f6',
+    icon: '🌿'
+  },
+  B1: {
+    code: 'B1',
+    name: 'Intermediate',
+    description: 'Can deal with most situations while traveling',
+    color: '#8b5cf6',
+    icon: '🌳'
+  },
+  B2: {
+    code: 'B2',
+    name: 'Upper Intermediate',
+    description: 'Can interact with a degree of fluency and spontaneity',
+    color: '#f59e0b',
+    icon: '🏆'
+  },
+  C1: {
+    code: 'C1',
+    name: 'Advanced',
+    description: 'Can express ideas fluently and spontaneously',
+    color: '#ef4444',
+    icon: '👑'
+  }
+};
+
+/**
+ * Generate a unique certificate number in the format: DLA-YYYY-LEVEL-NNNNNN
+ * @param level - The fluency level (A1, A2, B1, B2, C1)
+ * @returns A unique certificate number
+ */
+async function generateCertificateNumber(level: string): Promise<string> {
+  const year = new Date().getFullYear();
+  
+  // Get the current certificate counter for this year and level
+  const counterKey = `certificate-counter:${year}:${level}`;
+  const currentCounter = await kvGet(counterKey) || 0;
+  const nextCounter = currentCounter + 1;
+  
+  // Update the counter
+  await kvSet(counterKey, nextCounter);
+  
+  // Format the counter as a 6-digit number with leading zeros
+  const formattedCounter = String(nextCounter).padStart(6, '0');
+  
+  return `DLA-${year}-${level}-${formattedCounter}`;
+}
+
+/**
+ * Generate a certificate for a user upon fluency level upgrade
+ * @param userId - The user's ID
+ * @param userName - The user's name
+ * @param level - The fluency level achieved
+ * @param issuedBy - The admin user ID who issued the certificate
+ * @returns The generated certificate object
+ */
+async function generateCertificate(
+  userId: string,
+  userName: string,
+  level: string,
+  issuedBy: string
+): Promise<any> {
+  // Generate unique certificate ID
+  const certificateId = crypto.randomUUID();
+  
+  // Generate certificate number
+  const certificateNumber = await generateCertificateNumber(level);
+  
+  // Create certificate object
+  const certificate = {
+    id: certificateId,
+    userId,
+    userName,
+    level,
+    issuedAt: new Date().toISOString(),
+    issuedBy,
+    certificateNumber,
+  };
+  
+  // Store certificate in KV store
+  await kvSet(`certificate:${userId}:${certificateId}`, certificate);
+  
+  console.log(`Generated certificate ${certificateNumber} for user ${userId} at level ${level}`);
+  
+  return certificate;
+}
+
+// Get fluency level for a user
+app.get("/fluency/:userId", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const userId = c.req.param("userId");
+    const userProfile = await kvGet(`user:${userId}`);
+
+    if (!userProfile) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    const fluencyLevel = userProfile.fluencyLevel || 'A1';
+    const metadata = FLUENCY_LEVELS[fluencyLevel as keyof typeof FLUENCY_LEVELS];
+
+    return c.json({
+      userId: userProfile.id,
+      fluencyLevel: fluencyLevel,
+      fluencyLevelUpdatedAt: userProfile.fluencyLevelUpdatedAt,
+      fluencyLevelUpdatedBy: userProfile.fluencyLevelUpdatedBy,
+      metadata: metadata
+    });
+  } catch (error) {
+    console.log(`Fluency level fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Update fluency level for a user (admin only)
+app.patch("/fluency/:userId", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    // Authenticate the requesting user
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    // Verify admin role (teacher)
+    const adminProfile = await kvGet(`user:${user.id}`);
+    if (!adminProfile || adminProfile.role !== 'teacher') {
+      return c.json({ error: "Admin access required" }, 403);
+    }
+
+    const userId = c.req.param("userId");
+    const { newLevel } = await c.req.json();
+
+    // Validate new level format
+    const validLevels = ['A1', 'A2', 'B1', 'B2', 'C1'];
+    if (!newLevel || !validLevels.includes(newLevel)) {
+      return c.json({ error: "Invalid fluency level" }, 400);
+    }
+
+    // Get target user profile
+    const userProfile = await kvGet(`user:${userId}`);
+    if (!userProfile) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    const currentLevel = userProfile.fluencyLevel || 'A1';
+
+    // Validate level transition
+    const levelOrder = ['A1', 'A2', 'B1', 'B2', 'C1'];
+    const currentIndex = levelOrder.indexOf(currentLevel);
+    const newIndex = levelOrder.indexOf(newLevel);
+
+    // Check if trying to downgrade below A1
+    if (newIndex < 0) {
+      return c.json({ error: "Cannot downgrade below A1" }, 400);
+    }
+
+    // Check if trying to upgrade beyond C1
+    if (newIndex > 4) {
+      return c.json({ error: "Cannot upgrade beyond C1" }, 400);
+    }
+
+    // Check if transition is valid (only one level at a time)
+    const levelDifference = Math.abs(newIndex - currentIndex);
+    if (levelDifference !== 1) {
+      return c.json({ error: "Invalid level transition. Can only move one level at a time" }, 400);
+    }
+
+    // Update user profile with new level
+    const now = new Date().toISOString();
+    const updatedProfile = {
+      ...userProfile,
+      fluencyLevel: newLevel,
+      fluencyLevelUpdatedAt: now,
+      fluencyLevelUpdatedBy: user.id,
+    };
+
+    await kvSet(`user:${userId}`, updatedProfile);
+
+    // Record level change in history
+    await kvSet(`fluency-history:${userId}:${now}`, {
+      userId: userId,
+      previousLevel: currentLevel,
+      newLevel: newLevel,
+      changedAt: now,
+      changedBy: user.id,
+      changedByName: adminProfile.name,
+    });
+
+    console.log(`Admin ${user.id} updated user ${userId} from ${currentLevel} to ${newLevel}`);
+
+    // Generate certificate if this is an upgrade (not a downgrade)
+    let certificate = null;
+    if (newIndex > currentIndex) {
+      try {
+        certificate = await generateCertificate(
+          userId,
+          userProfile.name,
+          newLevel,
+          user.id
+        );
+        console.log(`Certificate generated: ${certificate.certificateNumber}`);
+      } catch (certError) {
+        console.error(`Failed to generate certificate: ${certError}`);
+        // Don't fail the entire request if certificate generation fails
+      }
+    }
+
+    const metadata = FLUENCY_LEVELS[newLevel as keyof typeof FLUENCY_LEVELS];
+
+    return c.json({
+      success: true,
+      userId: userId,
+      previousLevel: currentLevel,
+      newLevel: newLevel,
+      fluencyLevelUpdatedAt: now,
+      fluencyLevelUpdatedBy: user.id,
+      metadata: metadata,
+      certificate: certificate
+    });
+  } catch (error) {
+    console.log(`Fluency level update error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get fluency level history for a user
+app.get("/fluency/history/:userId", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const userId = c.req.param("userId");
+    
+    // Verify user exists
+    const userProfile = await kvGet(`user:${userId}`);
+    if (!userProfile) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    // Get all history entries for this user
+    const historyEntries = await kvGetByPrefix(`fluency-history:${userId}:`);
+
+    // Sort in reverse chronological order (most recent first)
+    const sortedHistory = historyEntries.sort((a, b) => {
+      const dateA = new Date(a.changedAt).getTime();
+      const dateB = new Date(b.changedAt).getTime();
+      return dateB - dateA; // Descending order
+    });
+
+    return c.json({
+      userId: userId,
+      history: sortedHistory
+    });
+  } catch (error) {
+    console.log(`Fluency history fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// CERTIFICATE ENDPOINTS
+
+// Get all certificates for a user
+app.get("/certificates/:userId", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const userId = c.req.param("userId");
+    
+    // Verify user exists
+    const userProfile = await kvGet(`user:${userId}`);
+    if (!userProfile) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    // Get all certificates for this user
+    const certificates = await kvGetByPrefix(`certificate:${userId}:`);
+
+    // Sort in chronological order (oldest first)
+    const sortedCertificates = certificates.sort((a, b) => {
+      const dateA = new Date(a.issuedAt).getTime();
+      const dateB = new Date(b.issuedAt).getTime();
+      return dateA - dateB; // Ascending order
+    });
+
+    return c.json({
+      userId: userId,
+      certificates: sortedCertificates
+    });
+  } catch (error) {
+    console.log(`Certificates fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get a specific certificate
+app.get("/certificates/:userId/:certificateId", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (!user || error) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const userId = c.req.param("userId");
+    const certificateId = c.req.param("certificateId");
+    
+    // Get the specific certificate
+    const certificate = await kvGet(`certificate:${userId}:${certificateId}`);
+
+    if (!certificate) {
+      return c.json({ error: "Certificate not found" }, 404);
+    }
+
+    return c.json({
+      certificate: certificate
+    });
+  } catch (error) {
+    console.log(`Certificate fetch error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 // MISTAKE BANK ENDPOINTS
 app.get("/mistakes", async (c) => {
   try {
@@ -1112,6 +1647,63 @@ app.delete("/grammar/:id", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     console.log(`Grammar deletion error: ${error}`);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Upload audio file endpoint
+app.post("/upload-audio", async (c) => {
+  try {
+    const accessToken = getAccessToken(c.req.header("Authorization"));
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+    if (!user || authError) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    // Get the file from the request
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    
+    if (!file) {
+      return c.json({ error: "No file provided" }, 400);
+    }
+
+    // Generate unique filename
+    const fileName = `audio-${Date.now()}.webm`;
+    const filePath = `recordings/${fileName}`;
+
+    // Upload to Supabase Storage
+    const fileBuffer = await file.arrayBuffer();
+    const { data, error: uploadError } = await supabase.storage
+      .from("vocabulary-audio")
+      .upload(filePath, fileBuffer, {
+        contentType: "audio/webm",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error("Upload error:", uploadError);
+      return c.json({ error: uploadError.message }, 500);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from("vocabulary-audio")
+      .getPublicUrl(filePath);
+
+    return c.json({ 
+      success: true,
+      audioUrl: publicUrl,
+      path: filePath
+    });
+  } catch (error) {
+    console.error("Audio upload error:", error);
     return c.json({ error: String(error) }, 500);
   }
 });

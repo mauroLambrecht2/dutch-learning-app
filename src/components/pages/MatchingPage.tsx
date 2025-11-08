@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
-import { Check, X, RotateCcw } from 'lucide-react';
+import { Check, X, RotateCcw, Volume2 } from 'lucide-react';
 
 interface MatchingPageProps {
   page: any;
@@ -66,6 +66,11 @@ export function MatchingPage({ page, answer, onAnswer }: MatchingPageProps) {
     return Object.entries(matches).find(([_, r]) => r === rightIndex)?.[0];
   };
 
+  const playAudio = (audioUrl: string) => {
+    const audio = new Audio(audioUrl);
+    audio.play().catch(err => console.error('Failed to play audio:', err));
+  };
+
   if (pairs.length === 0) {
     return <div>No matching pairs available</div>;
   }
@@ -97,6 +102,18 @@ export function MatchingPage({ page, answer, onAnswer }: MatchingPageProps) {
                   >
                     <div className="flex items-center gap-2 w-full">
                       <span className="flex-1 text-left">{pair.left}</span>
+                      {pair.audioUrl && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playAudio(pair.audioUrl);
+                          }}
+                          className="p-1 hover:bg-violet-100 rounded-full transition-colors"
+                          title="Play pronunciation"
+                        >
+                          <Volume2 className="w-3 h-3 text-violet-600" />
+                        </button>
+                      )}
                       {showResult && (
                         correct ? <Check className="w-4 h-4 text-green-600" /> : <X className="w-4 h-4 text-red-600" />
                       )}

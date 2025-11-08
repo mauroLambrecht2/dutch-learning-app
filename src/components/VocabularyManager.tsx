@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Mic, Play, Trash2, Plus, Upload } from 'lucide-react';
 import { AudioRecorder } from './AudioRecorder';
+import { VocabularyCleanupTool } from './VocabularyCleanupTool';
 
 interface VocabularyWord {
   id: string;
@@ -86,18 +87,30 @@ export function VocabularyManager({ accessToken }: VocabularyManagerProps) {
   }
 
   return (
-    <div className="bg-white border border-zinc-200">
-      <div className="p-6 border-b border-zinc-200">
-        <h2 className="text-lg text-zinc-900" style={{ fontWeight: 600 }}>
-          Vocabulary Library
-        </h2>
-        <p className="text-sm text-zinc-500 mt-1">
-          Manage all vocabulary words. Add audio pronunciations for each word.
+    <div className="space-y-6">
+      {/* Cleanup Tool */}
+      <div className="bg-orange-50 border border-orange-200 p-4 rounded">
+        <h3 className="text-sm font-semibold text-orange-900 mb-2">
+          🧹 Remove Duplicates
+        </h3>
+        <p className="text-xs text-orange-800 mb-3">
+          If you have duplicate vocabulary words, use this tool to clean them up automatically.
         </p>
+        <VocabularyCleanupTool accessToken={accessToken} onComplete={loadVocabulary} />
       </div>
 
-      {/* Add New Word */}
-      <div className="p-6 border-b border-zinc-200 bg-zinc-50">
+      <div className="bg-white border border-zinc-200">
+        <div className="p-6 border-b border-zinc-200">
+          <h2 className="text-lg text-zinc-900" style={{ fontWeight: 600 }}>
+            Vocabulary Library
+          </h2>
+          <p className="text-sm text-zinc-500 mt-1">
+            Manage all vocabulary words. Add audio pronunciations for each word.
+          </p>
+        </div>
+
+        {/* Add New Word */}
+        <div className="p-6 border-b border-zinc-200 bg-zinc-50">
         <h3 className="text-sm text-zinc-700 mb-4" style={{ fontWeight: 600 }}>
           Add New Word
         </h3>
@@ -216,12 +229,14 @@ export function VocabularyManager({ accessToken }: VocabularyManagerProps) {
                   <AudioRecorder
                     onSave={(audioUrl) => handleAudioSaved(word.id, audioUrl)}
                     onCancel={() => setRecordingId(null)}
+                    accessToken={accessToken}
                   />
                 </div>
               )}
             </div>
           ))
         )}
+      </div>
       </div>
     </div>
   );

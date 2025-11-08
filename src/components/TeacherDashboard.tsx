@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { Button } from './ui/button';
-import { LogOut, Plus, BookOpen, FileText, ClipboardList, BarChart3, Upload, Volume2, GraduationCap, Search, Edit, Copy, Trash2, MoreVertical } from 'lucide-react';
+import { LogOut, Plus, BookOpen, FileText, ClipboardList, BarChart3, Upload, Volume2, GraduationCap, Search, Edit, Copy, Trash2, MoreVertical, Users, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import { Input } from './ui/input';
 import { LessonBuilder } from './LessonBuilder';
 import { ClassBuilder } from './ClassBuilder';
 import { JSONImporter } from './JSONImporter';
 import { VocabularyManager } from './VocabularyManager';
+import { AudioMigrationTool } from './AudioMigrationTool';
 import { TestBuilder } from './TestBuilder';
 import { TestResults } from './TestResults';
 import { GrammarBuilder } from './GrammarBuilder';
+import { StudentList } from './StudentList';
+import { StudentProfile } from './StudentProfile';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
   DropdownMenu,
@@ -36,6 +39,7 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
   const [showNewChapterInput, setShowNewChapterInput] = useState(false);
   const [newChapterName, setNewChapterName] = useState('');
   const [activeTab, setActiveTab] = useState('lessons');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -106,6 +110,29 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
     }
   };
 
+  const handleReorderClass = async (classId: string, direction: 'up' | 'down') => {
+    const currentIndex = classes.findIndex(c => c.id === classId);
+    if (currentIndex === -1) return;
+    
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= classes.length) return;
+
+    // Swap order
+    const newClasses = [...classes];
+    [newClasses[currentIndex], newClasses[newIndex]] = [newClasses[newIndex], newClasses[currentIndex]];
+    
+    // Update order field for both classes
+    try {
+      await Promise.all([
+        api.updateClass(accessToken, newClasses[currentIndex].id, { order: currentIndex }),
+        api.updateClass(accessToken, newClasses[newIndex].id, { order: newIndex })
+      ]);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to reorder classes:', error);
+    }
+  };
+
   const handleSaveClass = async () => {
     setShowBuilder(false);
     setEditingClass(null);
@@ -122,6 +149,18 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
       alert(`❌ Failed to import JSON: ${error.message}`);
     }
   };
+
+  // Show student profile if a student is selected
+  if (selectedStudentId) {
+    return (
+      <StudentProfile
+        userId={selectedStudentId}
+        accessToken={accessToken}
+        currentUserRole="teacher"
+        onBack={() => setSelectedStudentId(null)}
+      />
+    );
+  }
 
   if (showBuilder) {
     return (
@@ -218,6 +257,10 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
               <BarChart3 className="w-4 h-4 mr-2" />
               Test Results
             </TabsTrigger>
+            <TabsTrigger value="students" className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2">
+              <Users className="w-4 h-4 mr-2" />
+              Students
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="lessons" className="mt-0">
@@ -237,11 +280,23 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
               handleEditClass={handleEditClass}
               handleDuplicateClass={handleDuplicateClass}
               handleDeleteClass={handleDeleteClass}
+              handleReorderClass={handleReorderClass}
             />
           </TabsContent>
 
           <TabsContent value="vocabulary" className="mt-0">
-            <VocabularyManager accessToken={accessToken} />
+            <div className="space-y-6">
+              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
+                <h3 className="text-sm font-semibold text-yellow-900 mb-2">
+                  🔧 Audio Migration Tool
+                </h3>
+                <p className="text-xs text-yellow-800 mb-3">
+                  If your existing lessons don't have audio, use this tool to automatically add audio URLs from your vocabulary database.
+                </p>
+                <AudioMigrationTool accessToken={accessToken} />
+              </div>
+              <VocabularyManager accessToken={accessToken} />
+            </div>
           </TabsContent>
 
           <TabsContent value="tests" className="mt-0">
@@ -276,15 +331,21 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
           <TabsContent value="results" className="mt-0">
             <TestResults accessToken={accessToken} />
           </TabsContent>
+
+          <TabsContent value="students" className="mt-0">
+            <StudentList
+              accessToken={accessToken}
+              onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
+            />
+          </TabsContent>
         </Tabs>
       </div>
 
-      {showJSONImporter && (
-        <JSONImporter
-          onImport={handleJSONImport}
-          onClose={() => setShowJSONImporter(false)}
-        />
-      )}
+      <JSONImporter
+        isOpen={showJSONImporter}
+        onImport={handleJSONImport}
+        onClose={() => setShowJSONImporter(false)}
+      />
     </div>
   );
 }
@@ -306,6 +367,7 @@ function LessonsTab({
   handleEditClass,
   handleDuplicateClass,
   handleDeleteClass,
+  handleReorderClass,
 }: any) {
   const filteredClasses = classes.filter((c: any) => {
     const matchesDay = selectedDay ? c.dayId === selectedDay : true;
@@ -314,7 +376,7 @@ function LessonsTab({
         c.description?.toLowerCase().includes(searchQuery.toLowerCase())
       : true;
     return matchesDay && matchesSearch;
-  });
+  }).sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
   const getChapterStats = (dayId: string) => {
     const dayClasses = classes.filter((c: any) => c.dayId === dayId);
@@ -519,27 +581,49 @@ function LessonsTab({
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredClasses.map((cls) => (
+                {filteredClasses.map((cls, index) => (
                   <div 
                     key={cls.id} 
                     className="group border border-zinc-200 hover:border-zinc-300 hover:shadow-sm transition-all"
                   >
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm text-zinc-900 mb-1 truncate" style={{ fontWeight: 600 }}>
-                            {cls.title}
-                          </h3>
-                          <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{cls.description}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-2 py-0.5 bg-zinc-100 text-zinc-600 text-xs">
-                              {cls.pages?.length || 0} page{cls.pages?.length !== 1 ? 's' : ''}
-                            </span>
-                            {cls.dayId && (
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs border border-indigo-100">
-                                {days.find(d => d.id === cls.dayId)?.name}
+                        <div className="flex items-start gap-3">
+                          {!searchQuery && (
+                            <div className="flex flex-col gap-1 pt-1">
+                              <button
+                                onClick={() => handleReorderClass(cls.id, 'up')}
+                                disabled={index === 0}
+                                className="p-1 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-200"
+                                title="Move up"
+                              >
+                                <ChevronUp className="w-3 h-3 text-zinc-600" />
+                              </button>
+                              <button
+                                onClick={() => handleReorderClass(cls.id, 'down')}
+                                disabled={index === filteredClasses.length - 1}
+                                className="p-1 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-200"
+                                title="Move down"
+                              >
+                                <ChevronDown className="w-3 h-3 text-zinc-600" />
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-sm text-zinc-900 mb-1 truncate" style={{ fontWeight: 600 }}>
+                              {cls.title}
+                            </h3>
+                            <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{cls.description}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 bg-zinc-100 text-zinc-600 text-xs">
+                                {cls.pages?.length || 0} page{cls.pages?.length !== 1 ? 's' : ''}
                               </span>
-                            )}
+                              {cls.dayId && (
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs border border-indigo-100">
+                                  {days.find(d => d.id === cls.dayId)?.name}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">

@@ -1,16 +1,23 @@
-import { useState, useRef } from 'react';
-import { Button } from './ui/button';
-import { Mic, Square, Play, Save, X } from 'lucide-react';
+import { useState, useRef } from "react";
+import { Button } from "./ui/button";
+import { Mic, Square, Play, Save, X } from "lucide-react";
+import { api } from "../utils/api";
 
 interface AudioRecorderProps {
   onSave: (audioUrl: string) => void;
   onCancel: () => void;
+  accessToken: string;
 }
 
-export function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) {
+export function AudioRecorder({
+  onSave,
+  onCancel,
+  accessToken,
+}: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
@@ -28,18 +35,20 @@ export function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       mediaRecorder.start();
       setIsRecording(true);
       setError(null);
     } catch (err: any) {
-      setError('Microphone access denied. Please allow microphone access in your browser settings.');
-      console.error('Error accessing microphone:', err);
+      setError(
+        "Microphone access denied. Please allow microphone access in your browser settings."
+      );
+      console.error("Error accessing microphone:", err);
     }
   };
 
@@ -56,9 +65,34 @@ export function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) {
     }
   };
 
-  const saveRecording = () => {
-    if (audioUrl) {
-      onSave(audioUrl);
+  const saveRecording = async () => {
+    if (!audioUrl) return;
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      // Convert blob URL to actual blob
+      const response = await fetch(audioUrl);
+      const blob = await response.blob();
+
+      // Create a File object from the blob
+      const fileName = `audio-${Date.now()}.webm`;
+      const file = new File([blob], fileName, { type: "audio/webm" });
+
+      // Upload using API wrapper
+      const result = await api.uploadAudio(accessToken, file);
+
+      if (result.success && result.audioUrl) {
+        onSave(result.audioUrl);
+      } else {
+        throw new Error("Upload failed");
+      }
+    } catch (err) {
+      console.error("Error uploading audio:", err);
+      setError("Failed to upload audio. Please try again.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -101,10 +135,11 @@ export function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) {
             <Button
               onClick={saveRecording}
               size="sm"
+              disabled={isUploading}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               <Save className="w-4 h-4 mr-2" />
-              Save Audio
+              {isUploading ? "Uploading..." : "Save Audio"}
             </Button>
             <Button
               onClick={() => setAudioUrl(null)}

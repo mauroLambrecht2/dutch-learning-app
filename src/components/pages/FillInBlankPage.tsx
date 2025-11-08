@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
-import { Check, X } from 'lucide-react';
+import { Check, X, Volume2 } from 'lucide-react';
 
 interface FillInBlankPageProps {
   page: any;
@@ -31,6 +31,11 @@ export function FillInBlankPage({ page, answer, onAnswer }: FillInBlankPageProps
     };
     setCheckedAnswers(newChecked);
     onAnswer({ answers: userAnswers, checked: newChecked });
+  };
+
+  const playAudio = (audioUrl: string) => {
+    const audio = new Audio(audioUrl);
+    audio.play().catch(err => console.error('Failed to play audio:', err));
   };
 
   const renderSentenceWithBlank = (sentence: string, answer: string, userAnswer: string, isChecked: boolean) => {
@@ -75,7 +80,18 @@ export function FillInBlankPage({ page, answer, onAnswer }: FillInBlankPageProps
           <Card key={exIndex}>
             <CardContent className="p-6 space-y-4">
               <div>
-                <p className="text-sm text-gray-600 mb-2">Fill in the blank:</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-gray-600">Fill in the blank:</p>
+                  {exercise.audioUrl && (
+                    <button
+                      onClick={() => playAudio(exercise.audioUrl)}
+                      className="p-1.5 hover:bg-violet-50 rounded-full transition-colors"
+                      title="Play pronunciation"
+                    >
+                      <Volume2 className="w-4 h-4 text-violet-600" />
+                    </button>
+                  )}
+                </div>
                 <p className="text-lg">{renderSentenceWithBlank(exercise.sentence, exercise.answer, userAnswer, isChecked)}</p>
               </div>
               

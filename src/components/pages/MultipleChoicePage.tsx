@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
-import { Check, X } from 'lucide-react';
+import { Check, X, Volume2 } from 'lucide-react';
 
 interface MultipleChoicePageProps {
   page: any;
@@ -32,6 +32,11 @@ export function MultipleChoicePage({ page, answer, onAnswer }: MultipleChoicePag
     onAnswer({ answers: selectedAnswers, showFeedback: newShowFeedback });
   };
 
+  const playAudio = (audioUrl: string) => {
+    const audio = new Audio(audioUrl);
+    audio.play().catch(err => console.error('Failed to play audio:', err));
+  };
+
   return (
     <div className="space-y-6">
       {questions.map((question: any, qIndex: number) => {
@@ -42,7 +47,18 @@ export function MultipleChoicePage({ page, answer, onAnswer }: MultipleChoicePag
         return (
           <Card key={qIndex}>
             <CardContent className="p-6">
-              <p className="mb-4">{question.question}</p>
+              <div className="flex items-center gap-2 mb-4">
+                <p className="flex-1">{question.question}</p>
+                {question.audioUrl && (
+                  <button
+                    onClick={() => playAudio(question.audioUrl)}
+                    className="p-2 hover:bg-violet-50 rounded-full transition-colors flex-shrink-0"
+                    title="Play pronunciation"
+                  >
+                    <Volume2 className="w-5 h-5 text-violet-600" />
+                  </button>
+                )}
+              </div>
               <div className="space-y-2">
                 {question.options.map((option: string, optIndex: number) => {
                   const isSelected = selectedOption === optIndex;

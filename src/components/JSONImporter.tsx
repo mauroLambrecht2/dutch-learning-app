@@ -1,15 +1,22 @@
 import { useState } from 'react';
+import Modal from 'react-modal';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { X, Upload, Copy, Check } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
+// Set app element for accessibility
+if (typeof window !== 'undefined') {
+  Modal.setAppElement('#root');
+}
+
 interface JSONImporterProps {
+  isOpen: boolean;
   onImport: (data: any) => void;
   onClose: () => void;
 }
 
-export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
+export function JSONImporter({ isOpen, onImport, onClose }: JSONImporterProps) {
   const [jsonText, setJsonText] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -209,27 +216,59 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
     ]
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
-      <div className="max-w-5xl w-full max-h-[90vh] overflow-auto bg-white border border-zinc-200">
-        {/* Header */}
-        <div className="p-6 border-b border-zinc-200 bg-white sticky top-0 z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg text-zinc-900 mb-1" style={{ fontWeight: 600 }}>
-                Import Lesson from JSON
-              </h2>
-              <p className="text-sm text-zinc-500">
-                Quickly create lessons by pasting JSON data
-              </p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-zinc-100">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+  const customStyles = {
+    overlay: {
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      zIndex: 1000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    content: {
+      position: 'relative' as const,
+      top: 'auto',
+      left: 'auto',
+      right: 'auto',
+      bottom: 'auto',
+      border: '1px solid #e4e4e7',
+      background: '#fff',
+      overflow: 'hidden',
+      borderRadius: '0',
+      padding: '0',
+      maxWidth: '80rem',
+      width: '90%',
+      height: '90vh',
+      display: 'flex',
+      flexDirection: 'column' as const,
+    },
+  };
 
-        <div className="p-6">
+  return (
+    <Modal
+      isOpen={isOpen}
+      onRequestClose={onClose}
+      style={customStyles}
+      contentLabel="Import Lesson from JSON"
+    >
+      {/* Header */}
+      <div className="p-6 border-b border-zinc-200 bg-white flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg text-zinc-900 mb-1" style={{ fontWeight: 600 }}>
+              Import Lesson from JSON
+            </h2>
+            <p className="text-sm text-zinc-500">
+              Quickly create lessons by pasting JSON data
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 overflow-y-auto flex-1">
           <Tabs defaultValue="import" className="w-full">
             <TabsList className="mb-6">
               <TabsTrigger value="import">Import JSON</TabsTrigger>
@@ -249,8 +288,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                     setError('');
                   }}
                   placeholder='{"title": "My Lesson", "description": "...", "pages": [...]}'
-                  rows={16}
-                  className="font-mono text-sm"
+                  className="font-mono text-sm h-[400px] resize-none"
                 />
                 {error && (
                   <div className="mt-2 p-3 bg-red-50 border border-red-200 text-sm text-red-700">
@@ -306,7 +344,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                   </Button>
                 </div>
                 <div className="p-4">
-                  <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-auto text-xs rounded">
+                  <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-auto text-xs rounded max-h-[300px]">
                     {JSON.stringify(exampleBasic, null, 2)}
                   </pre>
                 </div>
@@ -334,7 +372,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                   </Button>
                 </div>
                 <div className="p-4">
-                  <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-auto text-xs rounded">
+                  <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-auto text-xs rounded max-h-[300px]">
                     {JSON.stringify(exampleAdvanced, null, 2)}
                   </pre>
                 </div>
@@ -355,7 +393,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       intro
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">Text-based introduction page</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "intro",
   "title": "Introduction",
@@ -372,7 +410,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       vocabulary
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">List of words with translations</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "vocabulary",
   "title": "New Words",
@@ -395,7 +433,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       flashcards
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">Interactive flashcards</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "flashcards",
   "title": "Practice",
@@ -417,7 +455,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       multipleChoice
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">Quiz with multiple options</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "multipleChoice",
   "title": "Quiz",
@@ -440,7 +478,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       fillInBlank
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">Complete sentences (use ___ for blanks)</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "fillInBlank",
   "title": "Fill the Blanks",
@@ -462,7 +500,7 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
                       matching
                     </h4>
                     <p className="text-xs text-zinc-600 mb-2">Match pairs of words</p>
-                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto">
+                    <pre className="bg-zinc-900 text-zinc-100 p-3 text-xs rounded overflow-auto max-h-[200px]">
 {`{
   "type": "matching",
   "title": "Match Words",
@@ -482,7 +520,6 @@ export function JSONImporter({ onImport, onClose }: JSONImporterProps) {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

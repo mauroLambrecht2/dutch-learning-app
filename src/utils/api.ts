@@ -35,6 +35,20 @@ export const api = {
     return response.json();
   },
 
+  async getUsers(accessToken: string) {
+    const response = await fetch(`${API_BASE}/users`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch users');
+    }
+    
+    return response.json();
+  },
+
   async createDay(accessToken: string, dayData: any) {
     const response = await fetch(`${API_BASE}/days`, {
       method: 'POST',
@@ -518,6 +532,101 @@ export const api = {
     
     if (!response.ok) {
       throw new Error('Failed to record mistake');
+    }
+    
+    return response.json();
+  },
+
+  // Fluency Level System
+  async getFluencyLevel(accessToken: string, userId: string) {
+    const response = await fetch(`${API_BASE}/fluency/${userId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch fluency level');
+    }
+    
+    return response.json();
+  },
+
+  async updateFluencyLevel(accessToken: string, userId: string, newLevel: string) {
+    const response = await fetch(`${API_BASE}/fluency/${userId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({ newLevel })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update fluency level');
+    }
+    
+    return response.json();
+  },
+
+  async getFluencyHistory(accessToken: string, userId: string) {
+    const response = await fetch(`${API_BASE}/fluency/history/${userId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch fluency history');
+    }
+    
+    return response.json();
+  },
+
+  async getCertificates(accessToken: string, userId: string) {
+    const response = await fetch(`${API_BASE}/certificates/${userId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch certificates');
+    }
+    
+    return response.json();
+  },
+
+  async getCertificate(accessToken: string, userId: string, certificateId: string) {
+    const response = await fetch(`${API_BASE}/certificates/${userId}/${certificateId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch certificate');
+    }
+    
+    return response.json();
+  },
+
+  async uploadAudio(accessToken: string, audioFile: File) {
+    const formData = new FormData();
+    formData.append('file', audioFile);
+
+    const response = await fetch(`${API_BASE}/upload-audio`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to upload audio');
     }
     
     return response.json();

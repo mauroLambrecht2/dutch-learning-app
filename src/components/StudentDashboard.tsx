@@ -8,6 +8,8 @@ import { MistakeBank } from './MistakeBank';
 import { SpacedRepetition } from './SpacedRepetition';
 import { VocabularyList } from './VocabularyList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { FluencyLevelBadge } from './FluencyLevelBadge';
+import type { FluencyLevel } from '../types/fluency';
 
 interface StudentDashboardProps {
   accessToken: string;
@@ -21,10 +23,23 @@ export function StudentDashboard({ accessToken, onLogout }: StudentDashboardProp
   const [userProgress, setUserProgress] = useState<any>({ streak: 0 });
   const [selectedClass, setSelectedClass] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('lessons');
+  const [fluencyLevel, setFluencyLevel] = useState<FluencyLevel>('A1');
+  const [userName, setUserName] = useState<string>('');
 
   useEffect(() => {
     loadData();
+    loadUserProfile();
   }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const profile = await api.getProfile(accessToken);
+      setFluencyLevel(profile.fluencyLevel || 'A1');
+      setUserName(profile.name || '');
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+    }
+  };
 
   const loadData = async () => {
     try {

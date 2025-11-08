@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
-import { RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RotateCcw, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface FlashcardsPageProps {
@@ -16,6 +16,11 @@ export function FlashcardsPage({ page, answer, onAnswer }: FlashcardsPageProps) 
   const [isFlipped, setIsFlipped] = useState(false);
 
   const currentCard = cards[currentCardIndex];
+
+  const playAudio = (audioUrl: string) => {
+    const audio = new Audio(audioUrl);
+    audio.play().catch(err => console.error('Failed to play audio:', err));
+  };
 
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
@@ -81,7 +86,21 @@ export function FlashcardsPage({ page, answer, onAnswer }: FlashcardsPageProps) 
           >
             <CardContent className="h-full flex flex-col items-center justify-center p-8">
               <p className="text-sm text-gray-600 mb-4">Dutch</p>
-              <p className="text-3xl text-violet-600 text-center">{currentCard.front}</p>
+              <div className="flex items-center gap-3">
+                <p className="text-3xl text-violet-600 text-center">{currentCard.front}</p>
+                {currentCard.audioUrl && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playAudio(currentCard.audioUrl);
+                    }}
+                    className="p-2 hover:bg-violet-50 rounded-full transition-colors"
+                    title="Play pronunciation"
+                  >
+                    <Volume2 className="w-6 h-6 text-violet-600" />
+                  </button>
+                )}
+              </div>
               <p className="text-sm text-gray-400 mt-8">Click to flip</p>
             </CardContent>
           </Card>

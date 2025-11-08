@@ -198,6 +198,18 @@ export function VocabularyList({ accessToken }: VocabularyListProps) {
                 <tr key={index} className="hover:bg-zinc-50">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
+                      {(word as any).audioUrl && (
+                        <button
+                          onClick={() => {
+                            const audio = new Audio((word as any).audioUrl);
+                            audio.play();
+                          }}
+                          className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
+                          title="Play pronunciation"
+                        >
+                          <Volume2 className="w-4 h-4 text-indigo-600" />
+                        </button>
+                      )}
                       <div className="text-zinc-900" style={{ fontWeight: 600 }}>
                         {word.dutch}
                       </div>
