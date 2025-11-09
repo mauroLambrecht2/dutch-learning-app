@@ -1,24 +1,33 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import { ArrowLeft, ArrowRight, X, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, X, RotateCcw, FileEdit } from 'lucide-react';
+import { toast } from 'sonner';
 import { IntroPage } from './pages/IntroPage';
 import { VocabularyPage } from './pages/VocabularyPage';
 import { FlashcardsPage } from './pages/FlashcardsPage';
 import { MultipleChoicePage } from './pages/MultipleChoicePage';
 import { FillInBlankPage } from './pages/FillInBlankPage';
 import { MatchingPage } from './pages/MatchingPage';
+import { SimpleNoteEditor } from './notes/SimpleNoteEditor';
+import type { VocabularyItem } from '../types/notes';
+import { api } from '../utils/api';
 
 interface ClassPlayerProps {
   classData: any;
   onComplete: (classId: string, score: number) => void;
   onExit: () => void;
+  accessToken?: string;
 }
 
-export function ClassPlayer({ classData, onComplete, onExit }: ClassPlayerProps) {
+export function ClassPlayer({ classData, onComplete, onExit, accessToken }: ClassPlayerProps) {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [pageAnswers, setPageAnswers] = useState<Record<number, any>>({});
   const [showResults, setShowResults] = useState(false);
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
+  // Note: noteId would be used to track the created note for subsequent saves
+  // For now, SimpleNoteEditor handles note creation internally
+  const noteId = undefined;
 
   const pages = classData.pages || [];
   const currentPage = pages[currentPageIndex];
@@ -71,7 +80,7 @@ export function ClassPlayer({ classData, onComplete, onExit }: ClassPlayerProps)
           }
         });
       } else if (page.type === 'matching' && page.content?.pairs) {
-        page.content.pairs.forEach((pair: any, pairIndex: number) => {
+        page.content.pairs.forEach((_: any, pairIndex: number) => {
           totalQuestions++;
           if (answer?.matches?.[pairIndex] === pairIndex) {
             correctAnswers++;
@@ -88,9 +97,67 @@ export function ClassPlayer({ classData, onComplete, onExit }: ClassPlayerProps)
     return totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 100;
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     const score = calculateScore();
+    
+    // Auto-create note template if user is logged in
+    if (accessToken) {
+      try {
+        await api.createNote(accessToken, {
+          lessonId: classData.id,
+          topicId: classData.topicId || classData.id,
+          title: `Notes: ${classData.title}`,
+          content: '',
+          tags: []
+        });
+      } catch (error) {
+        // Handle errors silently - don't block lesson completion
+        console.error('Failed to auto-create note template:', error);
+      }
+    }
+    
     onComplete(classData.id, score);
+  };
+
+  const handleOpenNoteEditor = () => {
+    if (!accessToken) {
+      toast.error('Please log in to take notes');
+      return;
+    }
+    setShowNoteEditor(!showNoteEditor);
+  };
+
+  const handleCloseNoteEditor = () => {
+    setShowNoteEditor(false);
+  };
+
+  // Extract vocabulary from lesson pages
+  const extractVocabulary = (): VocabularyItem[] => {
+    const vocabulary: VocabularyItem[] = [];
+    
+    pages.forEach((page: any) => {
+      if (page.type === 'vocabulary' && page.content?.items) {
+        page.content.items.forEach((item: any) => {
+          vocabulary.push({
+            word: item.dutch || item.word || '',
+            translation: item.english || item.translation || '',
+            exampleSentence: item.example || item.exampleSentence,
+            audioUrl: item.audioUrl,
+          });
+        });
+      }
+    });
+    
+    return vocabulary;
+  };
+
+  // Prepare lesson data for SimpleNoteEditor
+  const lessonData = {
+    title: classData.title || 'Untitled Lesson',
+    date: new Date().toISOString().split('T')[0],
+    topicName: classData.topic || classData.topicName || 'General',
+    level: classData.level || 'Intermediate',
+    vocabulary: extractVocabulary(),
   };
 
   const renderPage = () => {
@@ -182,57 +249,105 @@ export function ClassPlayer({ classData, onComplete, onExit }: ClassPlayerProps)
   const progressPercent = pages.length > 0 ? ((currentPageIndex + 1) / pages.length) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="bg-white border-b border-zinc-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <button 
-              onClick={onExit} 
-              className="text-sm text-zinc-600 hover:text-zinc-900 flex items-center"
-              style={{ fontWeight: 500 }}
-            >
-              <X className="w-4 h-4 mr-1" />
-              Exit
-            </button>
-            <div className="text-xs text-zinc-500" style={{ fontWeight: 500 }}>
-              {currentPageIndex + 1} of {pages.length}
+    <div className="min-h-screen bg-white flex flex-row">
+      {/* Main Content Area - Left Side */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${showNoteEditor ? 'w-1/2' : 'w-full'}`}>
+        {/* Header */}
+        <div className="bg-white border-b border-zinc-200 sticky top-0 z-10">
+          <div className="max-w-3xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <button 
+                onClick={onExit} 
+                className="text-sm text-zinc-600 hover:text-zinc-900 flex items-center"
+                style={{ fontWeight: 500 }}
+              >
+                <X className="w-4 h-4 mr-1" />
+                Exit
+              </button>
+              <div className="flex items-center gap-3">
+                {accessToken && (
+                  <Button
+                    onClick={handleOpenNoteEditor}
+                    variant={showNoteEditor ? "default" : "outline"}
+                    size="sm"
+                    className={showNoteEditor ? "bg-indigo-600" : "border-zinc-200"}
+                  >
+                    <FileEdit className="w-4 h-4 mr-2" />
+                    {showNoteEditor ? 'Hide Notes' : 'Take Notes'}
+                  </Button>
+                )}
+                <div className="text-xs text-zinc-500" style={{ fontWeight: 500 }}>
+                  {currentPageIndex + 1} of {pages.length}
+                </div>
+              </div>
+            </div>
+            <Progress value={progressPercent} className="h-1" />
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-6 py-10">
+            <div className="mb-8">
+              <h2 className="text-2xl text-zinc-900 mb-1" style={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+                {currentPage?.title}
+              </h2>
+            </div>
+
+            {renderPage()}
+
+            {/* Navigation */}
+            <div className="flex justify-between mt-12 pt-6 border-t border-zinc-200">
+              <Button
+                onClick={handlePrevious}
+                disabled={currentPageIndex === 0}
+                variant="outline"
+                className="border-zinc-200"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Previous
+              </Button>
+              <Button 
+                onClick={handleNext}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                {isLastPage ? 'Finish' : 'Next'}
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
           </div>
-          <Progress value={progressPercent} className="h-1" />
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <h2 className="text-2xl text-zinc-900 mb-1" style={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
-            {currentPage?.title}
-          </h2>
+      {/* Side Panel for Notes - Right Side */}
+      {accessToken && showNoteEditor && (
+        <div className="w-1/2 border-l border-zinc-200 bg-gray-50 flex flex-col h-screen overflow-hidden">
+          {/* Notes Header */}
+          <div className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+            <h2 className="text-lg font-semibold text-zinc-900">Take Notes</h2>
+            <Button
+              onClick={() => setShowNoteEditor(false)}
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          
+          {/* Notes Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto">
+            <SimpleNoteEditor
+              accessToken={accessToken}
+              lessonId={classData.id}
+              topicId={classData.topicId || classData.id}
+              noteId={noteId}
+              onClose={handleCloseNoteEditor}
+              lessonData={lessonData}
+            />
+          </div>
         </div>
-
-        {renderPage()}
-
-        {/* Navigation */}
-        <div className="flex justify-between mt-12 pt-6 border-t border-zinc-200">
-          <Button
-            onClick={handlePrevious}
-            disabled={currentPageIndex === 0}
-            variant="outline"
-            className="border-zinc-200"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Previous
-          </Button>
-          <Button 
-            onClick={handleNext}
-            className="bg-indigo-600 hover:bg-indigo-700"
-          >
-            {isLastPage ? 'Finish' : 'Next'}
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

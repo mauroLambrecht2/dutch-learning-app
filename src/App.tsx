@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Auth } from './components/Auth';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
@@ -9,6 +10,7 @@ import { Toaster } from './components/ui/sonner';
 import { supabase } from './utils/supabase-client';
 import { Button } from './components/ui/button';
 import { projectId } from './utils/supabase/info';
+import { FullNoteEditor } from './components/notes/FullNoteEditor';
 
 export default function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -244,17 +246,19 @@ export default function App() {
 
   if (userRole === 'teacher') {
     return (
-      <>
+      <BrowserRouter>
         <Toaster />
-        <TeacherDashboard accessToken={accessToken} onLogout={handleLogout} />
-      </>
+        <Routes>
+          <Route path="/*" element={<TeacherDashboard accessToken={accessToken} onLogout={handleLogout} />} />
+        </Routes>
+      </BrowserRouter>
     );
   }
 
   return (
-    <>
+    <BrowserRouter>
       <Toaster />
       <StudentDashboard accessToken={accessToken} onLogout={handleLogout} />
-    </>
+    </BrowserRouter>
   );
 }

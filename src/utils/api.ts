@@ -2,6 +2,70 @@ import { projectId, publicAnonKey } from './supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a784a06a`;
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
+// Network error detection
+function isNetworkError(error: any): boolean {
+  return (
+    error instanceof TypeError &&
+    (error.message.includes('fetch') ||
+      error.message.includes('network') ||
+      error.message.includes('Failed to fetch'))
+  );
+}
+
+// Retry logic for failed requests
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = MAX_RETRIES
+): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+    return response;
+  } catch (error) {
+    if (retries > 0 && isNetworkError(error)) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw error;
+  }
+}
+
+// Enhanced error handling
+async function handleResponse(response: Response): Promise<any> {
+  if (!response.ok) {
+    let errorMessage = `Request failed with status ${response.status}`;
+    
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.message || errorMessage;
+    } catch {
+      // If JSON parsing fails, use status text
+      errorMessage = response.statusText || errorMessage;
+    }
+    
+    // Add specific error messages for common status codes
+    if (response.status === 401) {
+      errorMessage = 'Authentication failed. Please log in again.';
+    } else if (response.status === 403) {
+      errorMessage = 'You do not have permission to perform this action.';
+    } else if (response.status === 404) {
+      errorMessage = 'The requested resource was not found.';
+    } else if (response.status === 429) {
+      errorMessage = 'Too many requests. Please try again later.';
+    } else if (response.status >= 500) {
+      errorMessage = 'Server error. Please try again later.';
+    }
+    
+    throw new Error(errorMessage);
+  }
+  
+  return response.json();
+}
+
 export const api = {
   async signup(email: string, password: string, name: string, role: 'teacher' | 'student') {
     const response = await fetch(`${API_BASE}/signup`, {
@@ -507,16 +571,36 @@ export const api = {
 
   // Upload audio (using Supabase Storage)
   async uploadAudio(accessToken: string, audioBlob: Blob, filename: string) {
-    const formData = new FormData();
-    formData.append('file', audioBlob, filename);
-    
-    // Note: This would use Supabase Storage API directly
-    // For now, we'll return a placeholder URL
-    // In a real implementation, you would upload to Supabase Storage
-    return {
-      url: `https://placeholder-audio-url.com/${filename}`,
-      success: true
-    };
+    try {
+      // Import supabase client
+      const { supabase } = await import('./supabase-client');
+      
+      // Upload to Supabase Storage bucket 'vocabulary-audio'
+      const { data, error } = await supabase.storage
+        .from('vocabulary-audio')
+        .upload(`recordings/${filename}`, audioBlob, {
+          contentType: audioBlob.type || 'audio/webm',
+          upsert: false
+        });
+
+      if (error) {
+        console.error('Supabase storage upload error:', error);
+        throw new Error(`Upload failed: ${error.message}`);
+      }
+
+      // Get public URL for the uploaded file
+      const { data: urlData } = supabase.storage
+        .from('vocabulary-audio')
+        .getPublicUrl(`recordings/${filename}`);
+
+      return {
+        url: urlData.publicUrl,
+        success: true
+      };
+    } catch (error) {
+      console.error('Audio upload error:', error);
+      throw error;
+    }
   },
 
   // Record mistake from exercise
@@ -612,23 +696,236 @@ export const api = {
     return response.json();
   },
 
-  async uploadAudio(accessToken: string, audioFile: File) {
-    const formData = new FormData();
-    formData.append('file', audioFile);
+  // Notes Management
+  async getNotes(accessToken: string, filters?: {
+    topicId?: string;
+    lessonId?: string;
+    tags?: string[];
+  }) {
+    try {
+      const params = new URLSearchParams();
+      if (filters?.topicId) params.append('topicId', filters.topicId);
+      if (filters?.lessonId) params.append('lessonId', filters.lessonId);
+      if (filters?.tags && filters.tags.length > 0) {
+        params.append('tags', filters.tags.join(','));
+      }
 
-    const response = await fetch(`${API_BASE}/upload-audio`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: formData
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to upload audio');
+      const url = `${API_BASE}/notes${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await fetchWithRetry(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
     }
-    
-    return response.json();
+  },
+
+  async getNote(accessToken: string, noteId: string) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/${noteId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async createNote(accessToken: string, noteData: {
+    lessonId: string;
+    topicId: string;
+    title: string;
+    content: string;
+    tags: string[];
+  }) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(noteData)
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async updateNote(accessToken: string, noteId: string, updates: {
+    content?: string;
+    tags?: string[];
+    title?: string;
+  }) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/${noteId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(updates)
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async deleteNote(accessToken: string, noteId: string) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/${noteId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async searchNotes(accessToken: string, query: string, filters?: {
+    topicId?: string;
+    tags?: string[];
+  }) {
+    try {
+      const params = new URLSearchParams();
+      params.append('q', query);
+      if (filters?.topicId) params.append('topicId', filters.topicId);
+      if (filters?.tags && filters.tags.length > 0) {
+        params.append('tags', filters.tags.join(','));
+      }
+
+      const response = await fetchWithRetry(`${API_BASE}/notes/search?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  // Tag Management
+  async getNoteTags(accessToken: string) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/tags`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async createNoteTag(accessToken: string, tagData: {
+    name: string;
+    color: string;
+  }) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/tags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(tagData)
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  async deleteNoteTag(accessToken: string, tagId: string) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/tags/${tagId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      return handleResponse(response);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
+  },
+
+  // Notes Export
+  async exportNotesToPDF(accessToken: string, options: {
+    scope: 'single' | 'topic' | 'all';
+    noteId?: string;
+    topicId?: string;
+    includeVocabulary: boolean;
+    includeClassInfo: boolean;
+    format: 'pdf';
+  }) {
+    try {
+      const response = await fetchWithRetry(`${API_BASE}/notes/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(options)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to export notes to PDF');
+      }
+      
+      return response.blob();
+    } catch (error) {
+      if (isNetworkError(error)) {
+        throw new Error('Network error. Please check your connection and try again.');
+      }
+      throw error;
+    }
   }
 };

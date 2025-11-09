@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, DragEvent } from 'react';
 import { api } from '../utils/api';
 import { Button } from './ui/button';
-import { LogOut, Plus, BookOpen, FileText, ClipboardList, BarChart3, Upload, Volume2, GraduationCap, Search, Edit, Copy, Trash2, MoreVertical, Users, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { LogOut, Plus, BookOpen, FileText, ClipboardList, BarChart3, Upload, Volume2, GraduationCap, Search, Edit, Copy, Trash2, MoreVertical, Users, GripVertical } from 'lucide-react';
 import { Input } from './ui/input';
 import { LessonBuilder } from './LessonBuilder';
 import { ClassBuilder } from './ClassBuilder';
@@ -110,26 +110,12 @@ export function TeacherDashboard({ accessToken, onLogout }: TeacherDashboardProp
     }
   };
 
-  const handleReorderClass = async (classId: string, direction: 'up' | 'down') => {
-    const currentIndex = classes.findIndex(c => c.id === classId);
-    if (currentIndex === -1) return;
-    
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (newIndex < 0 || newIndex >= classes.length) return;
-
-    // Swap order
-    const newClasses = [...classes];
-    [newClasses[currentIndex], newClasses[newIndex]] = [newClasses[newIndex], newClasses[currentIndex]];
-    
-    // Update order field for both classes
+  const handleReorderClass = async (classId: string, newOrder: number) => {
     try {
-      await Promise.all([
-        api.updateClass(accessToken, newClasses[currentIndex].id, { order: currentIndex }),
-        api.updateClass(accessToken, newClasses[newIndex].id, { order: newIndex })
-      ]);
+      await api.updateClass(accessToken, classId, { order: newOrder });
       await loadData();
     } catch (error) {
-      console.error('Failed to reorder classes:', error);
+      console.error('Failed to reorder class:', error);
     }
   };
 
@@ -369,7 +355,12 @@ function LessonsTab({
   handleDeleteClass,
   handleReorderClass,
 }: any) {
-  const filteredClasses = classes.filter((c: any) => {
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [optimisticClasses, setOptimisticClasses] = useState<any[] | null>(null);
+
+  // Use optimistic classes if available, otherwise use filtered classes
+  const baseFilteredClasses = classes.filter((c: any) => {
     const matchesDay = selectedDay ? c.dayId === selectedDay : true;
     const matchesSearch = searchQuery 
       ? c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -377,6 +368,77 @@ function LessonsTab({
       : true;
     return matchesDay && matchesSearch;
   }).sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+  const filteredClasses = optimisticClasses || baseFilteredClasses;
+
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // Add a custom drag image or styling
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    if (draggedIndex !== null && draggedIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    // Only clear if we're actually leaving the element
+    if (e.currentTarget === e.target) {
+      setDragOverIndex(null);
+    }
+  };
+
+  const handleDrop = async (e: DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    // Optimistically reorder the classes for immediate UI feedback
+    const reorderedClasses = [...baseFilteredClasses];
+    const [draggedClass] = reorderedClasses.splice(draggedIndex, 1);
+    reorderedClasses.splice(dropIndex, 0, draggedClass);
+    
+    // Update optimistic state immediately
+    setOptimisticClasses(reorderedClasses);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+
+    // Update order in the background
+    try {
+      await Promise.all(
+        reorderedClasses.map((cls, index) => 
+          handleReorderClass(cls.id, index)
+        )
+      );
+      // Clear optimistic state after successful update
+      setOptimisticClasses(null);
+    } catch (error) {
+      console.error('Failed to reorder classes:', error);
+      // Revert optimistic update on error
+      setOptimisticClasses(null);
+    }
+  };
+
+  const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
+    // Reset opacity
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   const getChapterStats = (dayId: string) => {
     const dayClasses = classes.filter((c: any) => c.dayId === dayId);
@@ -580,33 +642,44 @@ function LessonsTab({
                 )}
               </div>
             ) : (
-              <div className="space-y-3">
-                {filteredClasses.map((cls, index) => (
-                  <div 
-                    key={cls.id} 
-                    className="group border border-zinc-200 hover:border-zinc-300 hover:shadow-sm transition-all"
-                  >
+              <div>
+                {filteredClasses.map((cls, index) => {
+                  const isDragging = draggedIndex === index;
+                  const isDropTarget = dragOverIndex === index && draggedIndex !== null && draggedIndex !== index;
+                  const shouldShowDropIndicatorAbove = isDropTarget && draggedIndex !== null && draggedIndex > index;
+                  const shouldShowDropIndicatorBelow = isDropTarget && draggedIndex !== null && draggedIndex < index;
+
+                  return (
+                    <div key={cls.id}>
+                      {/* Drop indicator above */}
+                      {shouldShowDropIndicatorAbove && (
+                        <div className="h-2 mb-3 bg-indigo-100 border-2 border-dashed border-indigo-400 rounded animate-pulse" />
+                      )}
+                      
+                      <div 
+                        draggable={!searchQuery}
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
+                        className={`group border border-zinc-200 hover:border-zinc-300 hover:shadow-sm transition-all mb-3 ${
+                          isDragging ? 'opacity-40 scale-95' : ''
+                        } ${
+                          isDropTarget ? 'ring-2 ring-indigo-400 ring-offset-2' : ''
+                        } ${
+                          !searchQuery ? 'cursor-move' : ''
+                        }`}
+                        style={{
+                          transition: 'all 0.2s ease-in-out'
+                        }}
+                      >
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3">
                           {!searchQuery && (
-                            <div className="flex flex-col gap-1 pt-1">
-                              <button
-                                onClick={() => handleReorderClass(cls.id, 'up')}
-                                disabled={index === 0}
-                                className="p-1 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-200"
-                                title="Move up"
-                              >
-                                <ChevronUp className="w-3 h-3 text-zinc-600" />
-                              </button>
-                              <button
-                                onClick={() => handleReorderClass(cls.id, 'down')}
-                                disabled={index === filteredClasses.length - 1}
-                                className="p-1 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-200"
-                                title="Move down"
-                              >
-                                <ChevronDown className="w-3 h-3 text-zinc-600" />
-                              </button>
+                            <div className="flex items-center pt-1 cursor-grab active:cursor-grabbing">
+                              <GripVertical className="w-4 h-4 text-zinc-400" />
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
@@ -662,8 +735,15 @@ function LessonsTab({
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                      </div>
+                      
+                      {/* Drop indicator below */}
+                      {shouldShowDropIndicatorBelow && (
+                        <div className="h-2 mt-3 bg-indigo-100 border-2 border-dashed border-indigo-400 rounded animate-pulse" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

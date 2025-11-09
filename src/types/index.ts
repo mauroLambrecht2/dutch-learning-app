@@ -5,3 +5,4 @@
  */
 
 export * from './fluency';
+export * from './notes';

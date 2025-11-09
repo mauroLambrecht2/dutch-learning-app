@@ -18,11 +18,18 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
     setDetails([]);
 
     try {
-      // Load vocabulary
+      // Load vocabulary - only include words with valid audio URLs
       const vocabulary = await api.getVocabulary(accessToken);
-      const vocabMap = new Map(vocabulary.map((v: any) => [v.dutch.toLowerCase(), v]));
+      const validVocab = vocabulary.filter((v: any) => v.audioUrl && v.audioUrl.trim() !== '');
+      const vocabMap = new Map(validVocab.map((v: any) => [v.dutch.toLowerCase(), v]));
       
-      setDetails(prev => [...prev, `✓ Loaded ${vocabulary.length} vocabulary words`]);
+      setDetails(prev => [...prev, `✓ Loaded ${validVocab.length} vocabulary words with valid audio (${vocabulary.length - validVocab.length} skipped)`]);
+
+      if (validVocab.length === 0) {
+        setStatus('error');
+        setMessage('No vocabulary words with valid audio URLs found. Please add audio to your vocabulary first.');
+        return;
+      }
 
       // Load all classes
       const { classes } = await api.getClasses();
@@ -50,13 +57,17 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
               }
             }
 
-            // Update vocabulary pages
-            if (page.type === 'vocabulary' && page.content?.words) {
-              for (const word of page.content.words) {
-                const vocab = vocabMap.get(word.dutch?.toLowerCase());
-                if (vocab?.audioUrl && !word.audioUrl) {
-                  word.audioUrl = vocab.audioUrl;
-                  pageUpdated = true;
+            // Update vocabulary pages - check both 'words' and 'items' fields
+            if (page.type === 'vocabulary') {
+              const items = page.content?.items || page.content?.words || [];
+              for (const item of items) {
+                const dutchWord = item.dutch || item.word;
+                if (dutchWord) {
+                  const vocab = vocabMap.get(dutchWord.toLowerCase());
+                  if (vocab?.audioUrl && !item.audioUrl) {
+                    item.audioUrl = vocab.audioUrl;
+                    pageUpdated = true;
+                  }
                 }
               }
             }
@@ -107,7 +118,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
 
         // Save updated class
         if (classUpdated) {
-          await api.createClass(accessToken, classData);
+          await api.updateClass(accessToken, classData.id, classData);
           updatedCount++;
           setDetails(prev => [...prev, `✓ Updated: ${classData.title}`]);
         }

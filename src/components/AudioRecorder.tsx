@@ -80,11 +80,11 @@ export function AudioRecorder({
       const fileName = `audio-${Date.now()}.webm`;
       const file = new File([blob], fileName, { type: "audio/webm" });
 
-      // Upload using API wrapper
-      const result = await api.uploadAudio(accessToken, file);
+      // Upload using API wrapper (pass blob and filename separately)
+      const result = await api.uploadAudio(accessToken, blob, fileName);
 
-      if (result.success && result.audioUrl) {
-        onSave(result.audioUrl);
+      if (result.success && result.url) {
+        onSave(result.url);
       } else {
         throw new Error("Upload failed");
       }
