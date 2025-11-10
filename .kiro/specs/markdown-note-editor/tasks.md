@@ -125,7 +125,6 @@
 
 - [x] 13. Add routing for full-page editor
 
-
   - Create route: /notes/:noteId/edit
 
   - Create route: /notes/:noteId/edit

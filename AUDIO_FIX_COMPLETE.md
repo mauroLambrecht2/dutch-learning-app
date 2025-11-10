@@ -3,11 +3,13 @@
 ## Issues Fixed ✅
 
 ### 1. Filename was `undefined`
+
 **Problem**: URL showed `/recordings/undefined`  
 **Cause**: AudioRecorder passed only 2 params instead of 3  
 **Fix**: Now passes `(accessToken, blob, fileName)` correctly
 
 ### 2. Bucket doesn't exist
+
 **Problem**: `StorageApiError: Bucket not found`  
 **Cause**: The `audio-recordings` bucket hasn't been created in Supabase  
 **Fix**: Need to create it (see instructions below)
@@ -29,11 +31,13 @@ const result = await api.uploadAudio(accessToken, blob, fileName);
 ### Create the Supabase Storage Bucket (2 minutes)
 
 1. **Go to Supabase Storage**:
+
    - https://supabase.com/dashboard/project/tnlceozwrkspncxwcaqe/storage/buckets
 
 2. **Click "New bucket"**
 
 3. **Configure**:
+
    - Name: `audio-recordings`
    - Public bucket: ✅ **YES** (important!)
    - Click "Create"
@@ -63,13 +67,15 @@ Audio plays from Supabase CDN ✅
 ## Before vs After
 
 ### Before
+
 - ❌ Filename was `undefined`
 - ❌ Bucket didn't exist
 - ❌ Upload failed
 - ❌ Fake placeholder URLs
 - ❌ Audio couldn't play
 
-### After  
+### After
+
 - ✅ Filename generated correctly
 - ✅ Real Supabase Storage upload
 - ✅ Proper error messages

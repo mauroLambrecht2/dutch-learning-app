@@ -17,15 +17,14 @@ export function MatchingPage({ page, answer, onAnswer }: MatchingPageProps) {
   const [rightItems, setRightItems] = useState<any[]>([]);
 
   useEffect(() => {
-    // Shuffle right side items
-    if (!answer?.rightItems) {
-      const shuffled = [...pairs].map((p: any) => p.right).sort(() => Math.random() - 0.5);
-      setRightItems(shuffled);
-      onAnswer({ matches: {}, checked: false, rightItems: shuffled });
-    } else {
-      setRightItems(answer.rightItems);
-    }
-  }, []);
+    // Reset and shuffle when page changes
+    const shuffled = [...pairs].map((p: any) => p.right).sort(() => Math.random() - 0.5);
+    setRightItems(shuffled);
+    setMatches({});
+    setLeftSelection(null);
+    setIsChecked(false);
+    onAnswer({ matches: {}, checked: false, rightItems: shuffled });
+  }, [page]);
 
   const handleLeftClick = (index: number) => {
     if (isChecked) return;
