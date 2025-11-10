@@ -18,12 +18,14 @@ export function MatchingPage({ page, answer, onAnswer }: MatchingPageProps) {
 
   useEffect(() => {
     // Reset and shuffle when page changes
-    const shuffled = [...pairs].map((p: any) => p.right).sort(() => Math.random() - 0.5);
-    setRightItems(shuffled);
-    setMatches({});
-    setLeftSelection(null);
-    setIsChecked(false);
-    onAnswer({ matches: {}, checked: false, rightItems: shuffled });
+    if (pairs.length > 0) {
+      const shuffled = [...pairs].map((p: any) => p?.right).filter(Boolean).sort(() => Math.random() - 0.5);
+      setRightItems(shuffled);
+      setMatches({});
+      setLeftSelection(null);
+      setIsChecked(false);
+      onAnswer({ matches: {}, checked: false, rightItems: shuffled });
+    }
   }, [page]);
 
   const handleLeftClick = (index: number) => {
