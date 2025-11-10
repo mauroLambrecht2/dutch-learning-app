@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { RotateCcw, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
@@ -14,6 +14,13 @@ export function FlashcardsPage({ page, answer, onAnswer }: FlashcardsPageProps) 
   const cards = page.content?.cards || [];
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+
+  useEffect(() => {
+    // Reset state when page changes
+    setCurrentCardIndex(0);
+    setIsFlipped(false);
+    onAnswer({ viewed: false });
+  }, [page]);
 
   const currentCard = cards[currentCardIndex];
 

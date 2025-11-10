@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -14,6 +14,13 @@ export function FillInBlankPage({ page, answer, onAnswer }: FillInBlankPageProps
   const exercises = page.content?.exercises || [];
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>(answer?.answers || {});
   const [checkedAnswers, setCheckedAnswers] = useState<Record<number, boolean>>(answer?.checked || {});
+
+  useEffect(() => {
+    // Reset state when page changes
+    setUserAnswers({});
+    setCheckedAnswers({});
+    onAnswer({ answers: {}, checked: {} });
+  }, [page]);
 
   const handleAnswerChange = (exerciseIndex: number, value: string) => {
     const newAnswers = {

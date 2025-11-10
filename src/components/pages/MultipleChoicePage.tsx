@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Check, X, Volume2 } from 'lucide-react';
@@ -13,6 +13,13 @@ export function MultipleChoicePage({ page, answer, onAnswer }: MultipleChoicePag
   const questions = page.content?.questions || [];
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>(answer?.answers || {});
   const [showFeedback, setShowFeedback] = useState<Record<number, boolean>>(answer?.showFeedback || {});
+
+  useEffect(() => {
+    // Reset state when page changes
+    setSelectedAnswers({});
+    setShowFeedback({});
+    onAnswer({ answers: {}, showFeedback: {} });
+  }, [page]);
 
   const handleSelectOption = (questionIndex: number, optionIndex: number) => {
     const newSelectedAnswers = {

@@ -1,39 +1,52 @@
-import { useState } from 'react';
-import { api } from '../utils/api';
-import { Button } from './ui/button';
-import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { useState } from "react";
+import { api } from "../utils/api";
+import { Button } from "./ui/button";
+import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 
 interface AudioMigrationToolProps {
   accessToken: string;
 }
 
 export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
-  const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState<
+    "idle" | "running" | "success" | "error"
+  >("idle");
+  const [message, setMessage] = useState("");
   const [details, setDetails] = useState<string[]>([]);
 
   const migrateAudio = async () => {
-    setStatus('running');
-    setMessage('Loading vocabulary and lessons...');
+    setStatus("running");
+    setMessage("Loading vocabulary and lessons...");
     setDetails([]);
 
     try {
       // Load vocabulary - only include words with valid audio URLs
       const vocabulary = await api.getVocabulary(accessToken);
-      const validVocab = vocabulary.filter((v: any) => v.audioUrl && v.audioUrl.trim() !== '');
-      const vocabMap = new Map(validVocab.map((v: any) => [v.dutch.toLowerCase(), v]));
-      
-      setDetails(prev => [...prev, `✓ Loaded ${validVocab.length} vocabulary words with valid audio (${vocabulary.length - validVocab.length} skipped)`]);
+      const validVocab = vocabulary.filter(
+        (v: any) => v.audioUrl && v.audioUrl.trim() !== ""
+      );
+      const vocabMap = new Map(
+        validVocab.map((v: any) => [v.dutch.toLowerCase(), v])
+      );
+
+      setDetails((prev) => [
+        ...prev,
+        `✓ Loaded ${validVocab.length} vocabulary words with valid audio (${
+          vocabulary.length - validVocab.length
+        } skipped)`,
+      ]);
 
       if (validVocab.length === 0) {
-        setStatus('error');
-        setMessage('No vocabulary words with valid audio URLs found. Please add audio to your vocabulary first.');
+        setStatus("error");
+        setMessage(
+          "No vocabulary words with valid audio URLs found. Please add audio to your vocabulary first."
+        );
         return;
       }
 
       // Load all classes
       const { classes } = await api.getClasses();
-      setDetails(prev => [...prev, `✓ Found ${classes.length} lessons`]);
+      setDetails((prev) => [...prev, `✓ Found ${classes.length} lessons`]);
 
       let updatedCount = 0;
       let pageCount = 0;
@@ -47,7 +60,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
             let pageUpdated = false;
 
             // Update flashcards
-            if (page.type === 'flashcards' && page.content?.cards) {
+            if (page.type === "flashcards" && page.content?.cards) {
               for (const card of page.content.cards) {
                 const vocab = vocabMap.get(card.front?.toLowerCase());
                 if (vocab?.audioUrl && !card.audioUrl) {
@@ -58,7 +71,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
             }
 
             // Update vocabulary pages - check both 'words' and 'items' fields
-            if (page.type === 'vocabulary') {
+            if (page.type === "vocabulary") {
               const items = page.content?.items || page.content?.words || [];
               for (const item of items) {
                 const dutchWord = item.dutch || item.word;
@@ -73,7 +86,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
             }
 
             // Update matching exercises
-            if (page.type === 'matching' && page.content?.pairs) {
+            if (page.type === "matching" && page.content?.pairs) {
               for (const pair of page.content.pairs) {
                 const vocab = vocabMap.get(pair.left?.toLowerCase());
                 if (vocab?.audioUrl && !pair.audioUrl) {
@@ -84,7 +97,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
             }
 
             // Update multiple choice
-            if (page.type === 'multipleChoice' && page.content?.questions) {
+            if (page.type === "multipleChoice" && page.content?.questions) {
               for (const question of page.content.questions) {
                 // Try to extract Dutch word from question
                 const match = question.question?.match(/"([^"]+)"/);
@@ -99,7 +112,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
             }
 
             // Update fill in blank
-            if (page.type === 'fillInBlank' && page.content?.exercises) {
+            if (page.type === "fillInBlank" && page.content?.exercises) {
               for (const exercise of page.content.exercises) {
                 const vocab = vocabMap.get(exercise.answer?.toLowerCase());
                 if (vocab?.audioUrl && !exercise.audioUrl) {
@@ -120,21 +133,25 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
         if (classUpdated) {
           await api.updateClass(accessToken, classData.id, classData);
           updatedCount++;
-          setDetails(prev => [...prev, `✓ Updated: ${classData.title}`]);
+          setDetails((prev) => [...prev, `✓ Updated: ${classData.title}`]);
         }
       }
 
-      setStatus('success');
-      setMessage(`Migration complete! Updated ${updatedCount} lessons (${pageCount} pages with audio added)`);
-      
-      if (updatedCount === 0) {
-        setDetails(prev => [...prev, '⚠️ No lessons needed updating. Either they already have audio or no matching vocabulary was found.']);
-      }
+      setStatus("success");
+      setMessage(
+        `Migration complete! Updated ${updatedCount} lessons (${pageCount} pages with audio added)`
+      );
 
+      if (updatedCount === 0) {
+        setDetails((prev) => [
+          ...prev,
+          "⚠️ No lessons needed updating. Either they already have audio or no matching vocabulary was found.",
+        ]);
+      }
     } catch (error) {
-      setStatus('error');
+      setStatus("error");
       setMessage(`Migration failed: ${error}`);
-      console.error('Migration error:', error);
+      console.error("Migration error:", error);
     }
   };
 
@@ -145,24 +162,28 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
           Audio Migration Tool
         </h2>
         <p className="text-sm text-zinc-600">
-          This tool will automatically add audio URLs to all existing lessons by matching words with your vocabulary database.
+          This tool will automatically add audio URLs to all existing lessons by
+          matching words with your vocabulary database.
         </p>
       </div>
 
-      {status === 'idle' && (
-        <Button onClick={migrateAudio} className="bg-indigo-600 hover:bg-indigo-700">
+      {status === "idle" && (
+        <Button
+          onClick={migrateAudio}
+          className="bg-indigo-600 hover:bg-indigo-700"
+        >
           Start Migration
         </Button>
       )}
 
-      {status === 'running' && (
+      {status === "running" && (
         <div className="flex items-center gap-3 text-blue-600">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>{message}</span>
         </div>
       )}
 
-      {status === 'success' && (
+      {status === "success" && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-green-600">
             <CheckCircle className="w-5 h-5" />
@@ -174,7 +195,7 @@ export function AudioMigrationTool({ accessToken }: AudioMigrationToolProps) {
         </div>
       )}
 
-      {status === 'error' && (
+      {status === "error" && (
         <div className="flex items-center gap-3 text-red-600">
           <AlertCircle className="w-5 h-5" />
           <span>{message}</span>
